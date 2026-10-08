@@ -1,0 +1,165 @@
+{
+  "name": "Ticketing System - AI Triage (Gemini HTTP)",
+  "nodes": [
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "httpMethod": "POST",
+        "path": "new-ticket",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "webhookId": "test-webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": ""
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"text\": \"Oto zgłoszenie od klienta: \\\"{{ $json.body.message }}\\\". Zaklasyfikuj je do jednej z kategorii (Wsparcie, Pytanie, Skarga) oraz podaj sentyment (Pozytywny, Neutralny, Negatywny). Zwróć tylko JSON w formacie: {\\\"kategoria\\\": \\\"...\\\", \\\"sentyment\\\": \\\"...\\\"}\"\n        }\n      ]\n    }\n  ]\n}",
+        "options": {}
+      },
+      "name": "Google Gemini (API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{JSON.parse($json.candidates[0].content.parts[0].text).sentyment}}",
+              "value2": "Negatywny"
+            }
+          ]
+        }
+      },
+      "name": "IF - Sentyment",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"PILNE! Klient jest bardzo niezadowolony. Zgłoszenie: {{$node[\"Webhook\"].json[\"body\"][\"message\"]}}\"\n}",
+        "options": {}
+      },
+      "name": "Slack Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        700,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Wiadomość": "={{ $node[\"Webhook\"].json[\"body\"][\"message\"] }}",
+            "Sentyment": "={{ JSON.parse($json.candidates[0].content.parts[0].text).sentyment }}",
+            "Kategoria": "={{ JSON.parse($json.candidates[0].content.parts[0].text).kategoria }}"
+          }
+        },
+        "options": {}
+      },
+      "name": "Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [
+        700,
+        450
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Google Gemini (API)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini (API)": {
+      "main": [
+        [
+          {
+            "node": "IF - Sentyment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Sentyment": {
+      "main": [
+        [
+          {
+            "node": "Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}
